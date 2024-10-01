@@ -239,15 +239,21 @@ class Annotator:
         }
 
     def get_txt_color(self, color=(128, 128, 128), txt_color=(255, 255, 255)):
-        """Assign text color based on background color."""
-        if color in self.dark_colors:
-            return 104, 31, 17
-        elif color in self.light_colors:
-            return 255, 255, 255
-        else:
-            return txt_color
+        """
+        Assign text color based on background color.
 
-    def circle_label(self, box, label="", color=(128, 128, 128), txt_color=(255, 255, 255), margin=2):
+        Args:
+            color (tuple, optional): The background color of the rectangle for text (B, G, R).
+            txt_color (tuple, optional): The color of the text (R, G, B).
+
+        Returns:
+            txt_color (tuple): Text color for label
+        """
+        return (
+            (104, 31, 17) if color in self.dark_colors else (255, 255, 255) if color in self.light_colors else txt_color
+        )
+
+    def circle_label(self, box, label="", color=(128, 128, 128), txt_color=(255, 255, 255)):
         """
         Draws a label with a background circle centered within a given bounding box.
 
@@ -256,39 +262,33 @@ class Annotator:
             label (str): The text label to be displayed.
             color (tuple, optional): The background color of the rectangle (B, G, R).
             txt_color (tuple, optional): The color of the text (R, G, B).
-            margin (int, optional): The margin between the text and the rectangle border.
         """
-        # If label have more than 3 characters, skip other characters, due to circle size
-        if len(label) > 3:
-            print(
-                f"Length of label is {len(label)}, initial 3 label characters will be considered for circle annotation!"
-            )
-            label = label[:3]
-
-        # Calculate the center of the box
+        # Calculate the center of the box and get the text size
         x_center, y_center = int((box[0] + box[2]) / 2), int((box[1] + box[3]) / 2)
-        # Get the text size
-        text_size = cv2.getTextSize(str(label), cv2.FONT_HERSHEY_SIMPLEX, self.sf - 0.15, self.tf)[0]
-        # Calculate the required radius to fit the text with the margin
-        required_radius = int(((text_size[0] ** 2 + text_size[1] ** 2) ** 0.5) / 2) + margin
-        # Draw the circle with the required radius
-        cv2.circle(self.im, (x_center, y_center), required_radius, color, -1)
-        # Calculate the position for the text
-        text_x = x_center - text_size[0] // 2
-        text_y = y_center + text_size[1] // 2
-        # Draw the text
-        cv2.putText(
-            self.im,
-            str(label),
-            (text_x, text_y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            self.sf - 0.15,
-            self.get_txt_color(color, txt_color),
-            self.tf,
-            lineType=cv2.LINE_AA,
+        text_size = (
+            cv2.getTextSize(str(label), cv2.FONT_HERSHEY_SIMPLEX, self.sf - 0.15, self.tf)[0]
+            if label is not None
+            else self.tf * 4
         )
 
-    def text_label(self, box, label="", color=(128, 128, 128), txt_color=(255, 255, 255), margin=5):
+        # Calculate the required radius to fit the text and draw circle
+        required_radius = int(((text_size[0] ** 2 + text_size[1] ** 2) ** 0.5) / 2) + self.tf
+        cv2.circle(self.im, (x_center, y_center), required_radius, color, -1)
+
+        if label is not None:
+            # Draw the text
+            cv2.putText(
+                self.im,
+                str(label),
+                (x_center - text_size[0] // 2, y_center + text_size[1] // 2),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                self.sf - 0.15,
+                self.get_txt_color(color, txt_color),
+                self.tf,
+                lineType=cv2.LINE_AA,
+            )
+
+    def text_label(self, box, label="Ultralytics", color=(128, 128, 128), txt_color=(255, 255, 255)):
         """
         Draws a label with a background rectangle centered within a given bounding box.
 
@@ -297,22 +297,24 @@ class Annotator:
             label (str): The text label to be displayed.
             color (tuple, optional): The background color of the rectangle (B, G, R).
             txt_color (tuple, optional): The color of the text (R, G, B).
-            margin (int, optional): The margin between the text and the rectangle border.
         """
-        # Calculate the center of the bounding box
+        # Calculate the center of the box and get the text size
         x_center, y_center = int((box[0] + box[2]) / 2), int((box[1] + box[3]) / 2)
-        # Get the size of the text
         text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, self.sf - 0.1, self.tf)[0]
+
         # Calculate the top-left corner of the text (to center it)
         text_x = x_center - text_size[0] // 2
         text_y = y_center + text_size[1] // 2
-        # Calculate the coordinates of the background rectangle
-        rect_x1 = text_x - margin
-        rect_y1 = text_y - text_size[1] - margin
-        rect_x2 = text_x + text_size[0] + margin
-        rect_y2 = text_y + margin
+
         # Draw the background rectangle
-        cv2.rectangle(self.im, (rect_x1, rect_y1), (rect_x2, rect_y2), color, -1)
+        cv2.rectangle(
+            self.im,
+            (text_x - self.tf * 2, text_y - text_size[1] - self.tf * 2),
+            (text_x + +text_size[0] + self.tf * 2, text_y + self.tf * 2),
+            color,
+            -1,
+        )
+
         # Draw the text on top of the rectangle
         cv2.putText(
             self.im,
@@ -543,17 +545,18 @@ class Annotator:
 
     def get_bbox_dimension(self, bbox=None):
         """
-        Calculate the area of a bounding box.
+        Compute the dimensions and area of a bounding box.
 
         Args:
-            bbox (tuple): Bounding box coordinates in the format (x_min, y_min, x_max, y_max).
+            bbox (tuple): Coordinates of the bounding box in the format (x_min, y_min, x_max, y_max).
 
         Returns:
-            angle (degree): Degree value of angle between three points
+            width (float): Width of the bounding box.
+            height (float): Height of the bounding box.
+            area (float): Area enclosed by the bounding box.
         """
-        x_min, y_min, x_max, y_max = bbox
-        width = x_max - x_min
-        height = y_max - y_min
+        width = bbox[2] - bbox[0]
+        height = bbox[3] - bbox[1]
         return width, height, width * height
 
     def draw_region(self, reg_pts=None, color=(0, 255, 0), thickness=5):
@@ -562,8 +565,8 @@ class Annotator:
 
         Args:
             reg_pts (list): Region Points (for line 2 points, for region 4 points)
-            color (tuple): Region Color value
-            thickness (int): Region area thickness value
+            color (tuple, optional): Region Color value
+            thickness (int, optional): Region area thickness value
         """
         cv2.polylines(self.im, [np.array(reg_pts, dtype=np.int32)], isClosed=True, color=color, thickness=thickness)
 
@@ -577,46 +580,48 @@ class Annotator:
 
         Args:
             track (list): object tracking points for trails display
-            color (tuple): tracks line color
-            track_thickness (int): track line thickness value
+            color (tuple, optional): tracks line color
+            track_thickness (int, optional): track line width value
         """
-        points = np.hstack(track).astype(np.int32).reshape((-1, 1, 2))
-        cv2.polylines(self.im, [points], isClosed=False, color=color, thickness=track_thickness)
+        cv2.polylines(
+            self.im,
+            [np.hstack(track).astype(np.int32).reshape((-1, 1, 2))],
+            isClosed=False,
+            color=color,
+            thickness=track_thickness,
+        )
         cv2.circle(self.im, (int(track[-1][0]), int(track[-1][1])), track_thickness * 2, color, -1)
 
-    def queue_counts_display(self, label, points=None, region_color=(255, 255, 255), txt_color=(0, 0, 0)):
+    def queue_counts_display(self, label, points=None, region_color=(255, 255, 255), txt_color=(104, 31, 17)):
         """
         Displays queue counts on an image centered at the points with customizable font size and colors.
 
         Args:
             label (str): queue counts label
             points (tuple): region points for center point calculation to display text
-            region_color (RGB): queue region color
-            txt_color (RGB): text display color
+            region_color (tuple, optional): queue region color
+            txt_color (tuple, optional): text display color
         """
-        x_values = [point[0] for point in points]
-        y_values = [point[1] for point in points]
-        center_x = sum(x_values) // len(points)
-        center_y = sum(y_values) // len(points)
+        center_x = sum([point[0] for point in points]) // len(points)
+        center_y = sum([point[1] for point in points]) // len(points)
 
         text_size = cv2.getTextSize(label, 0, fontScale=self.sf, thickness=self.tf)[0]
-        text_width = text_size[0]
-        text_height = text_size[1]
 
-        rect_width = text_width + 20
-        rect_height = text_height + 20
-        rect_top_left = (center_x - rect_width // 2, center_y - rect_height // 2)
-        rect_bottom_right = (center_x + rect_width // 2, center_y + rect_height // 2)
-        cv2.rectangle(self.im, rect_top_left, rect_bottom_right, region_color, -1)
-
-        text_x = center_x - text_width // 2
-        text_y = center_y + text_height // 2
+        rect_width = text_size[0] + 20
+        rect_height = text_size[1] + 20
+        cv2.rectangle(
+            self.im,
+            (center_x - rect_width // 2, center_y - rect_height // 2),
+            (center_x + rect_width // 2, center_y + rect_height // 2),
+            region_color,
+            -1,
+        )
 
         # Draw text
         cv2.putText(
             self.im,
             label,
-            (text_x, text_y),
+            (center_x - text_size[0] // 2, center_y + text_size[1] // 2),
             0,
             fontScale=self.sf,
             color=txt_color,
@@ -624,61 +629,38 @@ class Annotator:
             lineType=cv2.LINE_AA,
         )
 
-    def display_objects_labels(self, im0, text, txt_color, bg_color, x_center, y_center, margin):
-        """
-        Display the bounding boxes labels in parking management app.
-
-        Args:
-            im0 (ndarray): inference image
-            text (str): object/class name
-            txt_color (bgr color): display color for text foreground
-            bg_color (bgr color): display color for text background
-            x_center (float): x position center point for bounding box
-            y_center (float): y position center point for bounding box
-            margin (int): gap between text and rectangle for better display
-        """
-        text_size = cv2.getTextSize(text, 0, fontScale=self.sf, thickness=self.tf)[0]
-        text_x = x_center - text_size[0] // 2
-        text_y = y_center + text_size[1] // 2
-
-        rect_x1 = text_x - margin
-        rect_y1 = text_y - text_size[1] - margin
-        rect_x2 = text_x + text_size[0] + margin
-        rect_y2 = text_y + margin
-        cv2.rectangle(im0, (rect_x1, rect_y1), (rect_x2, rect_y2), bg_color, -1)
-        cv2.putText(im0, text, (text_x, text_y), 0, self.sf, txt_color, self.tf, lineType=cv2.LINE_AA)
-
-    def display_analytics(self, im0, text, txt_color, bg_color, margin):
+    def display_analytics(self, im0, text, txt_color, bg_color):
         """
         Display the overall statistics for parking lots.
 
         Args:
             im0 (ndarray): inference image
             text (dict): labels dictionary
-            txt_color (bgr color): display color for text foreground
-            bg_color (bgr color): display color for text background
-            margin (int): gap between text and rectangle for better display
+            txt_color (tuple): display color for text foreground
+            bg_color (tuple): display color for text background
         """
-        horizontal_gap = int(im0.shape[1] * 0.02)
-        vertical_gap = int(im0.shape[0] * 0.01)
         text_y_offset = 0
         for label, value in text.items():
             txt = f"{label}: {value}"
             text_size = cv2.getTextSize(txt, 0, self.sf, self.tf)[0]
             if text_size[0] < 5 or text_size[1] < 5:
                 text_size = (5, 5)
-            text_x = im0.shape[1] - text_size[0] - margin * 2 - horizontal_gap
-            text_y = text_y_offset + text_size[1] + margin * 2 + vertical_gap
-            rect_x1 = text_x - margin * 2
-            rect_y1 = text_y - text_size[1] - margin * 2
-            rect_x2 = text_x + text_size[0] + margin * 2
-            rect_y2 = text_y + margin * 2
-            cv2.rectangle(im0, (rect_x1, rect_y1), (rect_x2, rect_y2), bg_color, -1)
+
+            text_x = im0.shape[1] - text_size[0] - self.tf * 4 * 2 - int(im0.shape[1] * 0.02)
+            text_y = text_y_offset + text_size[1] + self.tf * 4 * 2 + int(im0.shape[0] * 0.01)
+            rect_y2 = text_y + self.tf * 8
+
+            cv2.rectangle(
+                im0,
+                (text_x - self.tf * 8, text_y - text_size[1] - self.tf * 8),
+                (text_x + text_size[0] + self.tf * 8, rect_y2),
+                bg_color,
+                -1,
+            )
             cv2.putText(im0, txt, (text_x, text_y), 0, self.sf, txt_color, self.tf, lineType=cv2.LINE_AA)
             text_y_offset = rect_y2
 
-    @staticmethod
-    def estimate_pose_angle(a, b, c):
+    def estimate_pose_angle(self, a, b, c):
         """
         Calculate the pose angle for object.
 
@@ -686,16 +668,12 @@ class Annotator:
             a (float) : The value of pose point a
             b (float): The value of pose point b
             c (float): The value o pose point c
-
         Returns:
             angle (degree): Degree value of angle between three points
         """
-        a, b, c = np.array(a), np.array(b), np.array(c)
-        radians = np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])
-        angle = np.abs(radians * 180.0 / np.pi)
-        if angle > 180.0:
-            angle = 360 - angle
-        return angle
+        a, b, c = map(lambda x: np.array(list(x)), (a, b, c))
+        angle = np.abs(np.degrees(np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])))
+        return 360 - angle if angle > 180 else angle
 
     def draw_specific_points(self, keypoints, indices=None, shape=(640, 640), radius=2, conf_thres=0.25):
         """
@@ -709,7 +687,7 @@ class Annotator:
             conf_thres (float, optional): Confidence threshold for keypoints. Defaults to 0.25.
 
         Returns:
-            (numpy.ndarray): Image with drawn keypoints.
+            image (numpy.ndarray): Image with drawn keypoints.
 
         Note:
             Keypoint format: [x, y] or [x, y, confidence].
@@ -728,77 +706,58 @@ class Annotator:
                     cv2.circle(self.im, (int(x_coord), int(y_coord)), radius, (0, 255, 0), -1, lineType=cv2.LINE_AA)
         return self.im
 
+    def plot_workout_information(self, display_text, position, color=(104, 31, 17), txt_color=(255, 255, 255)):
+        """
+        Draw text with a background on the image.
+
+        Args:
+            display_text (str): The text to be displayed.
+            position (tuple): Coordinates (x, y) on the image where the text will be placed.
+            color (tuple, optional): Text background color
+            txt_color (tuple, optional): Text foreground color
+        """
+        (text_width, text_height), _ = cv2.getTextSize(display_text, 0, self.sf, self.tf)
+
+        # Draw background rectangle
+        cv2.rectangle(
+            self.im,
+            (position[0], position[1] - text_height - 5),
+            (position[0] + text_width + 10, position[1] - text_height - 5 + text_height + 10 + self.tf),
+            color,
+            -1,
+        )
+        # Draw text
+        cv2.putText(self.im, display_text, position, 0, self.sf, txt_color, self.tf)
+
+        return text_height
+
     def plot_angle_and_count_and_stage(
         self, angle_text, count_text, stage_text, center_kpt, color=(104, 31, 17), txt_color=(255, 255, 255)
     ):
         """
-        Plot the pose angle, count value and step stage.
+        Plot the pose angle, count value, and step stage.
 
         Args:
-            angle_text (str): angle value for workout monitoring
-            count_text (str): counts value for workout monitoring
-            stage_text (str): stage decision for workout monitoring
-            center_kpt (list): centroid pose index for workout monitoring
-            color (tuple): text background color for workout monitoring
-            txt_color (tuple): text foreground color for workout monitoring
+            angle_text (str): Angle value for workout monitoring
+            count_text (str): Counts value for workout monitoring
+            stage_text (str): Stage decision for workout monitoring
+            center_kpt (list): Centroid pose index for workout monitoring
+            color (tuple, optional): Text background color
+            txt_color (tuple, optional): Text foreground color
         """
-        angle_text, count_text, stage_text = (f" {angle_text:.2f}", f"Steps : {count_text}", f" {stage_text}")
+        # Format text
+        angle_text, count_text, stage_text = f" {angle_text:.2f}", f"Steps : {count_text}", f" {stage_text}"
 
-        # Draw angle
-        (angle_text_width, angle_text_height), _ = cv2.getTextSize(angle_text, 0, self.sf, self.tf)
-        angle_text_position = (int(center_kpt[0]), int(center_kpt[1]))
-        angle_background_position = (angle_text_position[0], angle_text_position[1] - angle_text_height - 5)
-        angle_background_size = (angle_text_width + 2 * 5, angle_text_height + 2 * 5 + (self.tf * 2))
-        cv2.rectangle(
-            self.im,
-            angle_background_position,
-            (
-                angle_background_position[0] + angle_background_size[0],
-                angle_background_position[1] + angle_background_size[1],
-            ),
-            color,
-            -1,
+        # Draw angle, count and stage text
+        angle_height = self.plot_workout_information(
+            angle_text, (int(center_kpt[0]), int(center_kpt[1])), color, txt_color
         )
-        cv2.putText(self.im, angle_text, angle_text_position, 0, self.sf, txt_color, self.tf)
-
-        # Draw Counts
-        (count_text_width, count_text_height), _ = cv2.getTextSize(count_text, 0, self.sf, self.tf)
-        count_text_position = (angle_text_position[0], angle_text_position[1] + angle_text_height + 20)
-        count_background_position = (
-            angle_background_position[0],
-            angle_background_position[1] + angle_background_size[1] + 5,
+        count_height = self.plot_workout_information(
+            count_text, (int(center_kpt[0]), int(center_kpt[1]) + angle_height + 20), color, txt_color
         )
-        count_background_size = (count_text_width + 10, count_text_height + 10 + self.tf)
-
-        cv2.rectangle(
-            self.im,
-            count_background_position,
-            (
-                count_background_position[0] + count_background_size[0],
-                count_background_position[1] + count_background_size[1],
-            ),
-            color,
-            -1,
+        self.plot_workout_information(
+            stage_text, (int(center_kpt[0]), int(center_kpt[1]) + angle_height + count_height + 40), color, txt_color
         )
-        cv2.putText(self.im, count_text, count_text_position, 0, self.sf, txt_color, self.tf)
-
-        # Draw Stage
-        (stage_text_width, stage_text_height), _ = cv2.getTextSize(stage_text, 0, self.sf, self.tf)
-        stage_text_position = (int(center_kpt[0]), int(center_kpt[1]) + angle_text_height + count_text_height + 40)
-        stage_background_position = (stage_text_position[0], stage_text_position[1] - stage_text_height - 5)
-        stage_background_size = (stage_text_width + 10, stage_text_height + 10)
-
-        cv2.rectangle(
-            self.im,
-            stage_background_position,
-            (
-                stage_background_position[0] + stage_background_size[0],
-                stage_background_position[1] + stage_background_size[1],
-            ),
-            color,
-            -1,
-        )
-        cv2.putText(self.im, stage_text, stage_text_position, 0, self.sf, txt_color, self.tf)
 
     def seg_bbox(self, mask, mask_color=(255, 0, 255), label=None, txt_color=(255, 255, 255)):
         """
@@ -806,9 +765,9 @@ class Annotator:
 
         Args:
             mask (list): masks data list for instance segmentation area plotting
-            mask_color (RGB): mask foreground color
+            mask_color (tuple, optional): mask foreground color
             label (str): Detection label text
-            txt_color (RGB): text color
+            txt_color (tuple, optional): text color
         """
         cv2.polylines(self.im, [np.int32([mask])], isClosed=True, color=mask_color, thickness=2)
         text_size, _ = cv2.getTextSize(label, 0, self.sf, self.tf)
@@ -833,24 +792,21 @@ class Annotator:
         Args:
             pixels_distance (float): Pixels distance between two bbox centroids.
             centroids (list): Bounding box centroids data.
-            line_color (RGB): Distance line color.
-            centroid_color (RGB): Bounding box centroid color.
+            line_color (tuple, optional): Distance line color.
+            centroid_color (tuple, optional): Bounding box centroid color.
         """
         # Get the text size
-        (text_width_m, text_height_m), _ = cv2.getTextSize(
-            f"Pixels Distance: {pixels_distance:.2f}", 0, self.sf, self.tf
-        )
+        text = f"Pixels Distance: {pixels_distance:.2f}"
+        (text_width_m, text_height_m), _ = cv2.getTextSize(text, 0, self.sf, self.tf)
 
         # Define corners with 10-pixel margin and draw rectangle
-        top_left = (15, 25)
-        bottom_right = (15 + text_width_m + 20, 25 + text_height_m + 20)
-        cv2.rectangle(self.im, top_left, bottom_right, centroid_color, -1)
+        cv2.rectangle(self.im, (15, 25), (15 + text_width_m + 20, 25 + text_height_m + 20), centroid_color, -1)
 
         # Calculate the position for the text with a 10-pixel margin and draw text
-        text_position = (top_left[0] + 10, top_left[1] + text_height_m + 10)
+        text_position = (25, 25 + text_height_m + 10)
         cv2.putText(
             self.im,
-            f"Pixels Distance: {pixels_distance:.2f}",
+            text,
             text_position,
             0,
             self.sf,
@@ -870,8 +826,8 @@ class Annotator:
         Args:
             box (list): Bounding box coordinates
             center_point (tuple): center point for vision eye view
-            color (tuple): object centroid and line color value
-            pin_color (tuple): visioneye point color value
+            color (tuple, optional): object centroid and line color value
+            pin_color (tuple, optional): visioneye point color value
         """
         center_bbox = int((box[0] + box[2]) / 2), int((box[1] + box[3]) / 2)
         cv2.circle(self.im, center_point, self.tf * 2, pin_color, -1)
