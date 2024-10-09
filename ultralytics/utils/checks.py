@@ -11,7 +11,7 @@ import subprocess
 import time
 from importlib import metadata
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 import cv2
 import numpy as np
@@ -768,6 +768,20 @@ def cuda_is_available() -> bool:
         (bool): True if one or more NVIDIA GPUs are available, False otherwise.
     """
     return cuda_device_count() > 0
+
+
+def substr_in_set(value: str, collection: Iterable[str]) -> bool:
+    """
+    Check if a string contains any sub-strings from a set.
+
+    Args:
+        value (str): The string to check.
+        collection (set[str]): The set of sub-strings to check against.
+
+    Returns:
+        (bool): True if any sub-strings in the set are found in the string, False otherwise.
+    """
+    return value in collection
 
 
 # Define constants
