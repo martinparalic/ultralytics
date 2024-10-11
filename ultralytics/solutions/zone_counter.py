@@ -1,7 +1,5 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
-
-from shapely.geometry import LineString, Point
-
+from shapely.geometry import Point, Polygon
 from ultralytics.solutions.solutions import BaseSolution  # Import a parent class
 from ultralytics.utils.plotting import Annotator, colors
 
@@ -12,6 +10,8 @@ class ZoneCounter(BaseSolution):
     def __init__(self, **kwargs):
         """Initialization function for Count class, a child class of BaseSolution class, can be used for counting the objects."""
         super().__init__(**kwargs)
+        self.zones = []
+        self.counts = {}
 
     def count_objects_in_zones(self, im0):
         """
@@ -25,9 +25,19 @@ class ZoneCounter(BaseSolution):
         self.annotator = Annotator(im0, line_width=self.line_width)  # Initialize annotator
         self.extract_tracks(im0)  # Extract tracks
 
-        self.annotator.draw_region(
-            reg_pts=self.region, color=(104, 0, 123), thickness=self.line_width * 2
-        )  # Draw region
+        if isinstance(self.region[0], tuple):
+            self.zones.append(self.region[0])
+            self.annotator.draw_region(
+                reg_pts=self.region, color=(104, 0, 123), thickness=self.line_width * 2
+            )  # Draw
+        elif isinstance(self.region[0], list):
+            for z in self.region:
+                self.zones.append(Polygon(z))
+                self.annotator.draw_region(
+                    reg_pts=z, color=(104, 0, 123), thickness=self.line_width * 2
+                )  # Draw region
+
+        self.counts = {index: 0 for index in range(len(self.region))}
 
         # Iterate over bounding boxes, track ids and classes index
         for box, track_id, cls in zip(self.boxes, self.track_ids, self.clss):
@@ -42,11 +52,15 @@ class ZoneCounter(BaseSolution):
             )
 
             # Check if detection inside region
-            if self.region.contains(Point((bbox_center[0], bbox_center[1]))):
-                region["counts"] += 1
+            region_index = next((i for i, reg in enumerate(self.zones) if reg.contains(Point(bbox_center))), None)
+
+            if region_index is not None:
+                self.counts[region_index] += 1
 
 
-        self.display_counts(im0)  # Display the counts on the frame
+        print(f"Region Counts : {self.counts}")
+
+        # self.display_counts(im0)  # Display the counts on the frame
         self.display_output(im0)  # display output with base class function
 
         return im0  # return output image for more usage
