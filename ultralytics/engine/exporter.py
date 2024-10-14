@@ -16,6 +16,7 @@ TensorFlow Lite         | `tflite`                  | yolo11n.tflite
 TensorFlow Edge TPU     | `edgetpu`                 | yolo11n_edgetpu.tflite
 TensorFlow.js           | `tfjs`                    | yolo11n_web_model/
 PaddlePaddle            | `paddle`                  | yolo11n_paddle_model/
+MNN                     | `mnn`                     | yolo11n.mnn
 NCNN                    | `ncnn`                    | yolo11n_ncnn_model/
 
 Requirements:
@@ -41,6 +42,7 @@ Inference:
                          yolo11n.tflite             # TensorFlow Lite
                          yolo11n_edgetpu.tflite     # TensorFlow Edge TPU
                          yolo11n_paddle_model       # PaddlePaddle
+                         yolo11n.mnn                # MNN
                          yolo11n_ncnn_model         # NCNN
 
 TensorFlow.js:
@@ -109,6 +111,7 @@ def export_formats():
         ["TensorFlow Edge TPU", "edgetpu", "_edgetpu.tflite", True, False],
         ["TensorFlow.js", "tfjs", "_web_model", True, False],
         ["PaddlePaddle", "paddle", "_paddle_model", True, True],
+        ["MNN", "mnn", ".mnn", True, True],
         ["NCNN", "ncnn", "_ncnn_model", True, True],
     ]
     return dict(zip(["Format", "Argument", "Suffix", "CPU", "GPU"], zip(*x)))
@@ -190,7 +193,9 @@ class Exporter:
         flags = [x == fmt for x in fmts]
         if sum(flags) != 1:
             raise ValueError(f"Invalid export format='{fmt}'. Valid formats are {fmts}")
-        jit, onnx, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs, paddle, ncnn = flags  # export booleans
+        jit, onnx, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs, paddle, mnn, ncnn = (
+            flags  # export booleans
+        )
         is_tf_format = any((saved_model, pb, tflite, edgetpu, tfjs))
 
         # Device
@@ -310,7 +315,7 @@ class Exporter:
             f[0], _ = self.export_torchscript()
         if engine:  # TensorRT required before ONNX
             f[1], _ = self.export_engine()
-        if onnx:  # ONNX
+        if onnx or mnn:  # ONNX
             f[2], _ = self.export_onnx()
         if xml:  # OpenVINO
             f[3], _ = self.export_openvino()
@@ -329,8 +334,10 @@ class Exporter:
                 f[9], _ = self.export_tfjs()
         if paddle:  # PaddlePaddle
             f[10], _ = self.export_paddle()
+        if mnn:  # MNN
+            f[11], _ = self.export_mnn()
         if ncnn:  # NCNN
-            f[11], _ = self.export_ncnn()
+            f[12], _ = self.export_ncnn()
 
         # Finish
         f = [str(x) for x in f if x]  # filter out '' and None
@@ -534,6 +541,28 @@ class Exporter:
 
         pytorch2paddle(module=self.model, save_dir=f, jit_type="trace", input_examples=[self.im])  # export
         yaml_save(Path(f) / "metadata.yaml", self.metadata)  # add metadata.yaml
+        return f, None
+
+    @try_export
+    def export_mnn(self, prefix=colorstr("MNN:")):
+        """YOLOv8 MNN export using MNN https://github.com/alibaba/MNN."""
+        check_requirements("MNN")
+        import MNN  # noqa
+        from MNN.tools.mnnconvert import Tools
+
+        # Setup and checks
+        LOGGER.info(f"\n{prefix} starting export with MNN {MNN.version()}...")
+        f_onnx = str(self.file.with_suffix(".onnx"))  # onnx model file
+        assert Path(f_onnx).exists(), f"failed to export ONNX file: {f_onnx}"
+        f = str(self.file.with_suffix(".mnn"))  # MNN model file
+        args = ["", "-f", "ONNX", "--modelFile", f_onnx, "--MNNModel", f]
+        if self.args.int8:
+            args.append("--weightQuantBits")
+            args.append("8")
+        if self.args.half:
+            args.append("--fp16")
+        Tools.mnnconvert(args)
+        yaml_save(Path(f).parent / "metadata.yaml", self.metadata)  # add metadata.yaml
         return f, None
 
     @try_export
